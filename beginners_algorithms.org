@@ -26,9 +26,13 @@
    - correlation functions? (FFT) 
    - principal component analysis? 
 * MCMC
+<<<<<<< HEAD
    - 2D gaussian distribution 
    - Random walk
    - orbital motion with random three body encounters.
+=======
+
+>>>>>>> upstream/master
 * Non-linear PDE?
 * FEM?
 * Integration!?!
