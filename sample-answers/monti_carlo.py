@@ -11,6 +11,9 @@ def monti_carlo_samples(qfunc,N,qfargs,ndim=1):
 def gaussian_random_qfunc(randval,mean,sigma):
   return mean + sigma*np.sqrt(2)*spc.erfinv(randval*2.0 - 1)
 
+def gaussian(x,mean,sigma):
+  return np.exp(np.sum((x - mean)**2)/(2.0*sigma*sigma))/np.sqrt(2*sigma*sigma*np.pi)
+
  
 # method from xkcd 221
 def get_random_number():
@@ -52,119 +55,70 @@ def markov_chain_conditionaldistribution(qfunc,X0,N,qfargs,ndim=1):
   return X
 
 
-if __name__ == '__main__':
+def metropolis_hastings(pdfunc,proposalq,proposalpdf,X0,N,pdfargs,proposalargs,ndim=1):
 
-  import matplotlib.pylab as plt
-  from scipy.stats import gaussian_kde  
+  X = np.zeros((N,ndim))
+  X[0] = X0
 
-  # basic gaussian monti carlo
+  randval = np.random.rand(N-1,ndim)
+  U = np.random.rand(N-1)
 
-  N = 10000
-  qfargs = (np.array([0.0,0.0]),3.0)
-  X = monti_carlo_samples(gaussian_random_qfunc,N,qfargs,ndim=2)
+  for t in range(N-1):
+    y = proposalq(randval[t],X[t],*proposalargs) 
 
-  xy = np.vstack([X[:,0],X[:,1]])
-  z = gaussian_kde(xy)(xy)
+    #print pdfunc(X[t],*pdfargs)
+    #print proposalpdf(y,X[t],*proposalargs)
+ 
+    acceptance = (pdfunc(y,*pdfargs)*np.array(proposalpdf(X[t],y,*proposalargs)))  \
+                   / (pdfunc(X[t],*pdfargs)*np.array(proposalpdf(y,X[t],*proposalargs)))
 
-  plt.scatter(X[:,0],X[:,1],c=z,s=100, edgecolor='')
-  plt.colorbar()
-  plt.show()
-  plt.clf()
+    #print pdfunc(X[t],*pdfargs)
+    #print proposalpdf(y,X[t],*proposalargs)
 
-  # gaussian random walk
-  N = 100
+    acceptance = min(acceptance,1)
 
-  mean0 = 0.0
-  sigma = 3.0
+    if U[t] <= acceptance:
+      X[t+1] = y
+    else:
+      X[t+1] = X[t]
 
-  X0 = monti_carlo_samples(gaussian_random_qfunc,1,(0.0,3.0))
-
-  X = markov_chain_conditionaldistribution(gaussian_random_qfunc,X0,N,(3.0,))
-
-  t = np.arange(N)
-  plt.plot(t, X, 'kx-')
-  plt.show()
-  plt.clf()
+  return X
 
 
-  # markov chain recurance relation
-  # scattering problem
+def hit_and_run(pdfunc,proposalq,proposalpdf,X0,N,proposalargs,pdfargs,ndim=1):
 
-  import scipy.integrate as itge
-  
-  # two body integration
-  def twobody(t, y, mass):  
-    dy1 = y[2]
-    dy2 = y[3]
+  X = np.zeros((N,ndim))
+  X[0] = X0
+
+  randval = np.random.rand(N-1,ndim) - 0.5
+  U = np.random.rand(N-1)
+
+  for t in range(N-1):
+    direction = randval[t]/np.sqrt(np.sum(randval[t]**2))
     
-    r = np.sqrt(y[0]**2 + y[1]**2)
+    step = proposalq(direction,X[t],*proposalargs)
 
-    ddy1 = - mass*y[0]/(r**3)
-    ddy2 = - mass*y[1]/(r**3)
+    y = X[t] + step*direction
 
-    return [dy1,dy2,ddy1,ddy2]
-
-  # three body scattering
-  def scatter_recfunc(t,X_t,U):
-
-    # masses
-    ms = 1.0e-3
-    ma = 1.0
-    mb = 10.0
+    #print step
     
-    reduced_mass = ma*mb/(ma+mb)
+    acceptance = (pdfunc(y,*pdfargs)*np.array(proposalpdf(abs(step),-np.sign(step),y,*proposalargs)))  \
+                      / (pdfunc(X[t],*pdfargs)*np.array(proposalpdf(abs(step),np.sign(step),X[t],*proposalargs)))
 
-    # initial condition
-    x0 = X_t[:2]
-    v0 = X_t[2:]
+    #print acceptance
+ 
+    acceptance = min(acceptance,1)
 
-    deltat = 1
+    if U[t] <= acceptance:
+      X[t+1] = y
+    else:
+      X[t+1] = X[t]
 
-    r = itge.ode(twobody)
-    r.set_initial_value(X_t, t).set_f_params(ma + mb)
-    r.integrate(r.t+deltat)
+  return X
 
-    x0 = r.y[:2]
-    v0 = r.y[2:]
-
-    va = reduced_mass*v0/ma
-    us = U[:2]
-    theta = U[2]
-    impact_angle = U[3]
-    u = us - va
-    absu = np.sqrt(np.sum(u**2)) 
-
-    deltav_parrallel = 2*ms*absu*((np.sin(theta/2.0))**2)/(ms + ma)
-    deltav_per = -ms*absu*np.sin(theta)/(ms + ma)
-
-    deltav1 = deltav_parrallel*np.cos(theta) - deltav_per*np.sin(theta)
-    deltav2 = deltav_parrallel*np.sin(theta) + deltav_per*np.cos(theta)
-
-    va += np.array([deltav1,deltav2])
-
-    v0 = ma*va/reduced_mass
-
-    return np.array([x0[0],x0[1],v0[0],v0[1]])
-
-     
-
-  N = 1000
-
-  ma = 1.0
-  mb = 10.0
-  mass = ma + mb
-
-  v0 = np.sqrt(mass/10.0)
-
-  X0 = np.array([10.0,0.0,0.0,v0])
   
 
 
-  qfargs=(np.array([v0,v0,np.pi/4.0,0.0]),np.array([1.0,1.0,1.0,1.0]))
 
-  X = markov_chain_recurance(scatter_recfunc,gaussian_random_qfunc,X0,N,qfargs,ndim=4)
 
-  plt.plot(X[:,0],X[:,1],'bo-')
-  plt.show()
-  plt.clf()
 
